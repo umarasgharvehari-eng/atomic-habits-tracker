@@ -330,14 +330,29 @@ def habit_card(habit, is_completed, streak, on_complete, on_edit, on_delete):
 
 # Page: Today's Habits
 if page == "🏠 Today's Habits":
-    st.markdown('<div class="main-header"><h1>🌅 Today's Habits</h1><p>Small actions, remarkable results</p></div>', unsafe_allow_html=True)
-    show_tip("Start with your easiest habit to build momentum! The 2-minute rule means making it so easy you can't say no.")
+    # Use triple quotes to avoid any quote escaping issues
+    header_html = """
+    <div class="main-header">
+        <h1>🌅 Today&#39;s Habits</h1>
+        <p>Small actions, remarkable results</p>
+    </div>
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
+
+    show_tip("Start with your easiest habit to build momentum! The 2-minute rule means making it so easy you can not say no.")
 
     data = st.session_state.data
     today = get_today()
 
     if not data["habits"]:
-        st.markdown("<div class='empty-state'><h2>🎯 No habits yet!</h2><p>Let's build your first atomic habit together.</p><p>Remember: You don't need to be perfect, just consistent.</p></div>", unsafe_allow_html=True)
+        empty_html = """
+        <div class="empty-state">
+            <h2>🎯 No habits yet!</h2>
+            <p>Let&#39;s build your first atomic habit together.</p>
+            <p>Remember: You don&#39;t need to be perfect, just consistent.</p>
+        </div>
+        """
+        st.markdown(empty_html, unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             if st.button("➕ Create Your First Habit", use_container_width=True):
@@ -363,7 +378,7 @@ if page == "🏠 Today's Habits":
 
         if completion_rate == 100:
             st.balloons()
-            st.success("🎉 Amazing! You've completed all your habits today! Remember: Never miss twice!")
+            st.success("🎉 Amazing! You have completed all your habits today! Remember: Never miss twice!")
 
         st.markdown("---")
 
@@ -433,7 +448,7 @@ if page == "🏠 Today's Habits":
 
         reflection_key = f"reflection_{today}"
         current_reflection = data["reflections"].get(today, "")
-        reflection = st.text_area("What went well today? What could be improved?", value=current_reflection, placeholder="I showed up even when I didn't feel like it...", key=reflection_key)
+        reflection = st.text_area("What went well today? What could be improved?", value=current_reflection, placeholder="I showed up even when I did not feel like it...", key=reflection_key)
 
         col1, col2 = st.columns([1, 3])
         with col1:
@@ -452,15 +467,27 @@ elif page == "➕ Add New Habit":
     is_editing = st.session_state.editing_habit is not None
 
     if is_editing:
-        st.markdown('<div class="main-header"><h1>✏️ Edit Habit</h1><p>Refine your system</p></div>', unsafe_allow_html=True)
+        edit_header = """
+        <div class="main-header">
+            <h1>✏️ Edit Habit</h1>
+            <p>Refine your system</p>
+        </div>
+        """
+        st.markdown(edit_header, unsafe_allow_html=True)
         habit_to_edit = next((h for h in st.session_state.data["habits"] if h["id"] == st.session_state.editing_habit), None)
     else:
-        st.markdown('<div class="main-header"><h1>➕ Create New Atomic Habit</h1><p>Build your system, not just goals</p></div>', unsafe_allow_html=True)
-        show_tip("Start SMALL! The 2-minute rule: make it so easy you can't say no. You can always do more once you've started.")
+        add_header = """
+        <div class="main-header">
+            <h1>➕ Create New Atomic Habit</h1>
+            <p>Build your system, not just goals</p>
+        </div>
+        """
+        st.markdown(add_header, unsafe_allow_html=True)
+        show_tip("Start SMALL! The 2-minute rule: make it so easy you can not say no. You can always do more once you have started.")
         habit_to_edit = None
 
     with st.form("habit_form", clear_on_submit=not is_editing):
-        st.markdown("### 🎯 What's your habit?")
+        st.markdown("### 🎯 What is your habit?")
 
         name = st.text_input("Habit Name *", value=habit_to_edit["name"] if habit_to_edit else "", placeholder="e.g., Exercise, Read, Meditate, Write")
 
@@ -528,7 +555,7 @@ elif page == "➕ Add New Habit":
                     }
                     st.session_state.data["habits"].append(new_habit)
                     save_data(st.session_state.data)
-                    st.success(f"🎉 Habit '{name}' created! Remember: You don't rise to your goals, you fall to your systems.")
+                    st.success(f"🎉 Habit '{name}' created! Remember: You do not rise to your goals, you fall to your systems.")
                     st.balloons()
                     st.info("💡 **Next Step:** Go to 'Today's Habits' and complete your first check-in!")
             else:
@@ -542,7 +569,13 @@ elif page == "➕ Add New Habit":
 
 # Page: Progress Dashboard
 elif page == "📊 Progress Dashboard":
-    st.markdown('<div class="main-header"><h1>📊 Your Progress</h1><p>Track your compound growth</p></div>', unsafe_allow_html=True)
+    progress_header = """
+    <div class="main-header">
+        <h1>📊 Your Progress</h1>
+        <p>Track your compound growth</p>
+    </div>
+    """
+    st.markdown(progress_header, unsafe_allow_html=True)
     show_tip("Focus on your system, not your goals. A 1% improvement each day compounds to being 37x better in a year!")
 
     data = st.session_state.data
@@ -634,7 +667,15 @@ elif page == "📊 Progress Dashboard":
             days_active = (datetime.now() - earliest_date).days + 1
             improvement = (1.01 ** days_active)
 
-            st.markdown(f'<div class="quote-box"><h3>🎯 The Math of Small Wins</h3><p>If you've been getting <b>1% better</b> each day for <b>{days_active} days</b>...</p><h2>You are now <span style="color: #667eea;">{improvement:.2f}x</span> better than when you started!</h2><p><small>1% daily improvement = 37x yearly improvement</small></p></div>', unsafe_allow_html=True)
+            quote_html = f"""
+            <div class="quote-box">
+                <h3>🎯 The Math of Small Wins</h3>
+                <p>If you have been getting <b>1% better</b> each day for <b>{days_active} days</b>...</p>
+                <h2>You are now <span style="color: #667eea;">{improvement:.2f}x</span> better than when you started!</h2>
+                <p><small>1% daily improvement = 37x yearly improvement</small></p>
+            </div>
+            """
+            st.markdown(quote_html, unsafe_allow_html=True)
 
         if data["reflections"]:
             st.markdown("---")
@@ -650,8 +691,14 @@ elif page == "📊 Progress Dashboard":
 
 # Page: Manage Habits
 elif page == "⚙️ Manage Habits":
-    st.markdown('<div class="main-header"><h1>⚙️ Manage Your Habits</h1><p>Edit, delete, or reorganize</p></div>', unsafe_allow_html=True)
-    show_tip("It's better to have fewer consistent habits than many inconsistent ones. Don't be afraid to remove habits that don't serve you.")
+    manage_header = """
+    <div class="main-header">
+        <h1>⚙️ Manage Your Habits</h1>
+        <p>Edit, delete, or reorganize</p>
+    </div>
+    """
+    st.markdown(manage_header, unsafe_allow_html=True)
+    show_tip("It is better to have fewer consistent habits than many inconsistent ones. Do not be afraid to remove habits that do not serve you.")
 
     data = st.session_state.data
 
@@ -716,7 +763,13 @@ elif page == "⚙️ Manage Habits":
 
 # Page: Learn & Tips
 elif page == "📚 Learn & Tips":
-    st.markdown('<div class="main-header"><h1>📚 Learn Atomic Habits</h1><p>Master the framework</p></div>', unsafe_allow_html=True)
+    learn_header = """
+    <div class="main-header">
+        <h1>📚 Learn Atomic Habits</h1>
+        <p>Master the framework</p>
+    </div>
+    """
+    st.markdown(learn_header, unsafe_allow_html=True)
 
     show_tips_setting = st.checkbox("Show beginner tips throughout the app", value=st.session_state.show_tips)
     st.session_state.show_tips = show_tips_setting
@@ -745,12 +798,12 @@ elif page == "📚 Learn & Tips":
 
     principles = [
         ("🎯 Identity-Based Habits", "Focus on who you want to become, not what you want to achieve. Every action you take is a vote for the type of person you wish to become."),
-        ("📈 The 1% Rule", "If you get 1% better each day for one year, you'll end up 37 times better. Small changes compound into remarkable results."),
-        ("⏱️ The 2-Minute Rule", "When you start a new habit, it should take less than two minutes to do. Make it so easy you can't say no."),
+        ("📈 The 1% Rule", "If you get 1% better each day for one year, you will end up 37 times better. Small changes compound into remarkable results."),
+        ("⏱️ The 2-Minute Rule", "When you start a new habit, it should take less than two minutes to do. Make it so easy you can not say no."),
         ("🔗 Habit Stacking", "Pair a new habit with a current habit. 'After [CURRENT HABIT], I will [NEW HABIT].'"),
         ("🎁 Temptation Bundling", "Pair an action you want to do with an action you need to do."),
         ("📊 Never Miss Twice", "Missing once is a mistake. Missing twice is the start of a new habit. Get back on track immediately."),
-        ("🏛️ Environment Design", "You don't have to be the victim of your environment. You can also be the architect of it."),
+        ("🏛️ Environment Design", "You do not have to be the victim of your environment. You can also be the architect of it."),
         ("🔄 Systems vs Goals", "You do not rise to the level of your goals. You fall to the level of your systems.")
     ]
 
@@ -775,7 +828,13 @@ elif page == "📚 Learn & Tips":
 
 # Page: My Profile
 elif page == "👤 My Profile":
-    st.markdown('<div class="main-header"><h1>👤 My Profile</h1><p>Your identity and settings</p></div>', unsafe_allow_html=True)
+    profile_header = """
+    <div class="main-header">
+        <h1>👤 My Profile</h1>
+        <p>Your identity and settings</p>
+    </div>
+    """
+    st.markdown(profile_header, unsafe_allow_html=True)
 
     data = st.session_state.data
 
@@ -786,7 +845,7 @@ elif page == "👤 My Profile":
         st.markdown("---")
         st.subheader("🎯 Your Identity Statements")
         if data["habits"]:
-            st.markdown("**Current identities you're building:**")
+            st.markdown("**Current identities you are building:**")
             for habit in data["habits"]:
                 st.markdown(f"- I am {habit['identity']} (via {habit['name']})")
         else:
@@ -817,7 +876,17 @@ elif page == "👤 My Profile":
         start_date = datetime.strptime(data["user_settings"]["started_date"], '%Y-%m-%d')
         days_journey = (datetime.now() - start_date).days + 1
         total_checkins = sum(len(dates) for dates in data["check_ins"].values())
-        st.markdown(f'<div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);"><h4>🎯 Journey Stats</h4><p><b>Started:</b> {start_date.strftime("%B %d, %Y")} ({days_journey} days ago)</p><p><b>Total Habits Created:</b> {len(data["habits"])}</p><p><b>Total Check-ins:</b> {total_checkins}</p><p><b>Current Streaks:</b> {sum(get_streak(h["id"], data["check_ins"]) for h in data["habits"])} days combined</p></div>', unsafe_allow_html=True)
+
+        journey_html = f"""
+        <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h4>🎯 Journey Stats</h4>
+            <p><b>Started:</b> {start_date.strftime("%B %d, %Y")} ({days_journey} days ago)</p>
+            <p><b>Total Habits Created:</b> {len(data["habits"])}</p>
+            <p><b>Total Check-ins:</b> {total_checkins}</p>
+            <p><b>Current Streaks:</b> {sum(get_streak(h["id"], data["check_ins"]) for h in data["habits"])} days combined</p>
+        </div>
+        """
+        st.markdown(journey_html, unsafe_allow_html=True)
     else:
         st.info("Start your journey by creating your first habit!")
 
