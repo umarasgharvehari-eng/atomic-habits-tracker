@@ -337,7 +337,7 @@ if page == "🏠 Today's Habits":
     today = get_today()
 
     if not data["habits"]:
-        st.markdown('<div class="empty-state"><h2>🎯 No habits yet!</h2><p>Let's build your first atomic habit together.</p><p>Remember: You don't need to be perfect, just consistent.</p></div>', unsafe_allow_html=True)
+        st.markdown("<div class='empty-state'><h2>🎯 No habits yet!</h2><p>Let's build your first atomic habit together.</p><p>Remember: You don't need to be perfect, just consistent.</p></div>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             if st.button("➕ Create Your First Habit", use_container_width=True):
@@ -725,19 +725,20 @@ elif page == "📚 Learn & Tips":
     st.subheader("⚖️ The Four Laws of Behavior Change")
 
     laws = [
-        ("🎯 1. Make It Obvious", "Design your environment", "Use habit stacking", "Implementation intentions", "Hide cues of bad habits"),
-        ("😍 2. Make It Attractive", "Temptation bundling", "Join supportive cultures", "Create motivation rituals", "Reframe bad habits as unattractive"),
-        ("✅ 3. Make It Easy", "The 2-Minute Rule", "Reduce friction", "Prime your environment", "Increase friction for bad habits"),
-        ("🎉 4. Make It Satisfying", "Immediate rewards", "Habit tracking", "Never miss twice", "Make bad habits unsatisfying")
+        ("🎯 1. Make It Obvious", ["Design your environment", "Use habit stacking", "Implementation intentions"], ["Hide cues of bad habits"]),
+        ("😍 2. Make It Attractive", ["Temptation bundling", "Join supportive cultures", "Create motivation rituals"], ["Reframe bad habits as unattractive"]),
+        ("✅ 3. Make It Easy", ["The 2-Minute Rule", "Reduce friction", "Prime your environment"], ["Increase friction for bad habits"]),
+        ("🎉 4. Make It Satisfying", ["Immediate rewards", "Habit tracking", "Never miss twice"], ["Make bad habits unsatisfying"])
     ]
 
     for law in laws:
         with st.expander(law[0]):
             st.markdown("**For Good Habits:**")
-            for item in law[1:4]:
+            for item in law[1]:
                 st.markdown(f"- ✅ {item}")
             st.markdown("**For Bad Habits:**")
-            st.markdown(f"- ❌ {law[4]}")
+            for item in law[2]:
+                st.markdown(f"- ❌ {item}")
 
     st.markdown("---")
     st.subheader("🧠 Key Principles")
