@@ -1,6 +1,4 @@
-from pathlib import Path
-
-clean_app = r'''import streamlit as st
+import streamlit as st
 import json
 import os
 from datetime import datetime, timedelta
@@ -727,7 +725,3 @@ elif page == "👤 My Profile":
 st.sidebar.markdown("---")
 st.sidebar.caption("Built with ❤️ using Streamlit")
 st.sidebar.caption("Based on Atomic Habits by James Clear")
-'''
-path = Path("/mnt/data/app_clean_fixed.py")
-path.write_text(clean_app, encoding="utf-8")
-print(path)
