@@ -1,3 +1,4 @@
+
 import streamlit as st
 import json
 import os
@@ -268,18 +269,31 @@ def get_completed_dates_for_scheduled_days(habit_id, check_ins, habit_lookup, da
 
 def get_streak(habit_id, check_ins, habit_lookup):
     habit = habit_lookup.get(habit_id, {})
+
+    # If a habit is paused/inactive, its live streak should be 0.
+    if not habit.get("active", True):
+        return 0
+
     done_dates = set(check_ins.get(habit_id, []))
+    if not done_dates:
+        return 0
+
     streak = 0
     day = datetime.now().date()
-    while True:
+
+    # Safety bound to prevent date underflow / infinite loops.
+    # More than enough for habit tracking while guaranteeing termination.
+    for _ in range(3660):  # about 10 years
         if not is_habit_scheduled_for_date(habit, day):
             day -= timedelta(days=1)
             continue
+
         if day.strftime("%Y-%m-%d") in done_dates:
             streak += 1
             day -= timedelta(days=1)
         else:
             break
+
     return streak
 
 
