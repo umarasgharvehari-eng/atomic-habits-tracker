@@ -1,9 +1,8 @@
-import streamlit as st
+from pathlib import Path
+updated_code = r'''import streamlit as st
 import json
 import os
 from datetime import datetime, timedelta
-import pandas as pd
-from collections import defaultdict
 
 # Page configuration
 st.set_page_config(
@@ -143,15 +142,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Data persistence functions
-def load_data():
-    if os.path.exists('habits_data.json'):
-        try:
-            with open('habits_data.json', 'r') as f:
-                return json.load(f)
-        except:
-            return get_default_data()
-    return get_default_data()
+DATA_FILE = "habits_data.json"
+
+
+def get_today():
+    return datetime.now().strftime("%Y-%m-%d")
+
 
 def get_default_data():
     return {
@@ -160,34 +156,102 @@ def get_default_data():
         "reflections": {},
         "user_settings": {
             "name": "",
-            "started_date": datetime.now().strftime('%Y-%m-%d'),
-            "theme": "default"
+            "started_date": get_today(),
+            "theme": "default",
+            "show_tips": True
         }
     }
 
-def save_data(data):
-    with open('habits_data.json', 'w') as f:
-        json.dump(data, f, indent=2)
 
-def get_today():
-    return datetime.now().strftime('%Y-%m-%d')
+def normalize_data(data):
+    """
+    Backward-compatible schema migration for old or partial JSON files.
+    Prevents KeyError crashes when keys are missing.
+    """
+    default_data = get_default_data()
+
+    if not isinstance(data, dict):
+        data = {}
+
+    normalized = {
+        "habits": data.get("habits", default_data["habits"]),
+        "check_ins": data.get("check_ins", default_data["check_ins"]),
+        "reflections": data.get("reflections", default_data["reflections"]),
+        "user_settings": data.get("user_settings", default_data["user_settings"]),
+    }
+
+    if not isinstance(normalized["habits"], list):
+        normalized["habits"] = []
+
+    if not isinstance(normalized["check_ins"], dict):
+        normalized["check_ins"] = {}
+
+    if not isinstance(normalized["reflections"], dict):
+        normalized["reflections"] = {}
+
+    if not isinstance(normalized["user_settings"], dict):
+        normalized["user_settings"] = {}
+
+    user_defaults = default_data["user_settings"]
+    for key, value in user_defaults.items():
+        normalized["user_settings"].setdefault(key, value)
+
+    for habit in normalized["habits"]:
+        if not isinstance(habit, dict):
+            continue
+        habit.setdefault("id", f"habit_{int(datetime.now().timestamp())}")
+        habit.setdefault("name", "Untitled Habit")
+        habit.setdefault("two_minute_version", "")
+        habit.setdefault("identity", "someone who shows up")
+        habit.setdefault("stack_trigger", "")
+        habit.setdefault("location", "")
+        habit.setdefault("reward", "")
+        habit.setdefault("time_of_day", "Morning (6-9am)")
+        habit.setdefault("reminder_enabled", True)
+        habit.setdefault("weekend_skip", False)
+        habit.setdefault("created_at", get_today())
+        habit.setdefault("updated_at", get_today())
+
+    return normalized
+
+
+# Data persistence functions
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            return normalize_data(raw)
+        except Exception:
+            return get_default_data()
+    return get_default_data()
+
+
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(normalize_data(data), f, indent=2)
+
 
 def get_date_list(days=30):
     dates = []
     today = datetime.now().date()
-    for i in range(days-1, -1, -1):
+    for i in range(days - 1, -1, -1):
         date = today - timedelta(days=i)
-        dates.append(date.strftime('%Y-%m-%d'))
+        dates.append(date.strftime("%Y-%m-%d"))
     return dates
 
+
 def get_streak(habit_id, check_ins):
-    if habit_id not in check_ins or not check_ins[habit_id]:
+    habit_dates = check_ins.get(habit_id, [])
+    if not habit_dates:
         return 0
-    dates = sorted(check_ins[habit_id], reverse=True)
+
+    unique_dates = sorted(set(habit_dates), reverse=True)
     streak = 0
     today = datetime.now().date()
-    for i, date_str in enumerate(dates):
-        date = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+    for i, date_str in enumerate(unique_dates):
+        date = datetime.strptime(date_str, "%Y-%m-%d").date()
         expected = today - timedelta(days=i)
         if date == expected:
             streak += 1
@@ -195,52 +259,71 @@ def get_streak(habit_id, check_ins):
             break
     return streak
 
+
 def get_best_streak(habit_id, check_ins):
-    if habit_id not in check_ins or not check_ins[habit_id]:
+    habit_dates = check_ins.get(habit_id, [])
+    if not habit_dates:
         return 0
-    dates = sorted(check_ins[habit_id])
+
+    dates = sorted(set(habit_dates))
     if not dates:
         return 0
+
     best_streak = 1
     current_streak = 1
+
     for i in range(1, len(dates)):
-        prev_date = datetime.strptime(dates[i-1], '%Y-%m-%d').date()
-        curr_date = datetime.strptime(dates[i], '%Y-%m-%d').date()
+        prev_date = datetime.strptime(dates[i - 1], "%Y-%m-%d").date()
+        curr_date = datetime.strptime(dates[i], "%Y-%m-%d").date()
+
         if (curr_date - prev_date).days == 1:
             current_streak += 1
             best_streak = max(best_streak, current_streak)
         elif (curr_date - prev_date).days > 1:
             current_streak = 1
+
     return best_streak
 
+
 def get_completion_rate(habit_id, check_ins, days=30):
-    if habit_id not in check_ins:
+    habit_dates = set(check_ins.get(habit_id, []))
+    if not habit_dates:
         return 0
+
     date_list = get_date_list(days)
-    completed = sum(1 for date in date_list if date in check_ins[habit_id])
+    completed = sum(1 for date in date_list if date in habit_dates)
     return round((completed / days) * 100)
+
 
 def get_weekly_progress(habit_id, check_ins):
     weeks = []
     today = datetime.now().date()
+    habit_dates = set(check_ins.get(habit_id, []))
+
     for week in range(4):
         week_start = today - timedelta(days=today.weekday() + (week * 7))
-        week_dates = [(week_start + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
-        completed = sum(1 for date in week_dates if habit_id in check_ins and date in check_ins[habit_id])
+        week_dates = [(week_start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+        completed = sum(1 for date in week_dates if date in habit_dates)
         weeks.append(completed)
+
     return list(reversed(weeks))
 
+
 # Initialize session state
-if 'data' not in st.session_state:
+if "data" not in st.session_state:
     st.session_state.data = load_data()
-if 'editing_habit' not in st.session_state:
+else:
+    st.session_state.data = normalize_data(st.session_state.data)
+
+if "editing_habit" not in st.session_state:
     st.session_state.editing_habit = None
-if 'show_delete_confirm' not in st.session_state:
+if "show_delete_confirm" not in st.session_state:
     st.session_state.show_delete_confirm = None
-if 'show_tips' not in st.session_state:
-    st.session_state.show_tips = True
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "Today's Habits"
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "🏠 Today's Habits"
+
+# Sync global tip setting from saved profile
+st.session_state.show_tips = st.session_state.data.get("user_settings", {}).get("show_tips", True)
 
 # Sidebar
 st.sidebar.markdown("""
@@ -251,63 +334,89 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-page = st.sidebar.radio(
-    "Navigate",
-    ["🏠 Today's Habits", "➕ Add New Habit", "📊 Progress Dashboard", "⚙️ Manage Habits", "📚 Learn & Tips", "👤 My Profile"]
-)
+pages = [
+    "🏠 Today's Habits",
+    "➕ Add New Habit",
+    "📊 Progress Dashboard",
+    "⚙️ Manage Habits",
+    "📚 Learn & Tips",
+    "👤 My Profile",
+]
 
+default_index = pages.index(st.session_state.current_page) if st.session_state.current_page in pages else 0
+
+page = st.sidebar.radio("Navigate", pages, index=default_index)
 st.session_state.current_page = page
 
 # Quick stats in sidebar
-data = st.session_state.data
+data = normalize_data(st.session_state.data)
+st.session_state.data = data
 today = get_today()
 
-if data["habits"]:
+if data.get("habits"):
     total_habits = len(data["habits"])
-    completed_today = sum(1 for h in data["habits"] if h["id"] in data["check_ins"] and today in data["check_ins"][h["id"]])
+    completed_today = sum(
+        1
+        for h in data["habits"]
+        if h["id"] in data["check_ins"] and today in data["check_ins"][h["id"]]
+    )
     total_streak = sum(get_streak(h["id"], data["check_ins"]) for h in data["habits"])
+
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📈 Quick Stats")
     st.sidebar.metric("Today's Progress", f"{completed_today}/{total_habits}")
     st.sidebar.metric("Total Streaks", f"{total_streak} days")
-    if total_habits > 0:
-        avg_rate = sum(get_completion_rate(h["id"], data["check_ins"]) for h in data["habits"]) / total_habits
-        st.sidebar.progress(avg_rate / 100, text=f"30-day avg: {round(avg_rate)}%")
+
+    avg_rate = sum(get_completion_rate(h["id"], data["check_ins"]) for h in data["habits"]) / total_habits
+    st.sidebar.progress(avg_rate / 100, text=f"30-day avg: {round(avg_rate)}%")
 
 st.sidebar.markdown("---")
 st.sidebar.caption("💡 Tip: Start with just 1-2 habits!")
 
+
 # Helper functions
-def show_tip(tip_text, type="info"):
+def show_tip(tip_text, tip_type="info"):
     if st.session_state.show_tips:
-        if type == "success":
-            st.markdown(f'<div class="success-box">💡 <b>Tip:</b> {tip_text}</div>', unsafe_allow_html=True)
+        if tip_type == "success":
+            st.markdown(
+                f'<div class="success-box">💡 <b>Tip:</b> {tip_text}</div>',
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown(f'<div class="tip-box">💡 <b>Beginner Tip:</b> {tip_text}</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="tip-box">💡 <b>Beginner Tip:</b> {tip_text}</div>',
+                unsafe_allow_html=True,
+            )
+
 
 def habit_card(habit, is_completed, streak, on_complete, on_edit, on_delete):
     habit_id = habit["id"]
     card_class = "habit-card completed" if is_completed else "habit-card"
 
     st.markdown(f'<div class="{card_class}">', unsafe_allow_html=True)
-
     col1, col2, col3 = st.columns([3, 1, 2])
 
     with col1:
         st.markdown(f"**{habit['name']}**")
         st.markdown(f"<span class='identity-badge'>I am {habit['identity']}</span>", unsafe_allow_html=True)
-        if habit.get('stack_trigger'):
+        if habit.get("stack_trigger"):
             st.caption(f"🔗 After: {habit['stack_trigger']}")
-        if habit.get('two_minute_version'):
+        if habit.get("two_minute_version"):
             st.caption(f"⏱️ 2-min rule: {habit['two_minute_version']}")
-        if habit.get('reward'):
+        if habit.get("reward"):
             st.caption(f"🎁 Reward: {habit['reward']}")
 
     with col2:
         if streak > 0:
-            st.markdown(f"<div style='text-align: center;'><span style='font-size: 28px;'>🔥</span><br><b>{streak}</b><br><small>days</small></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='text-align: center;'><span style='font-size: 28px;'>🔥</span><br><b>{streak}</b><br><small>days</small></div>",
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown(f"<div style='text-align: center; color: #999;'><span style='font-size: 28px;'>⚪</span><br><small>Start today!</small></div>", unsafe_allow_html=True)
+            st.markdown(
+                "<div style='text-align: center; color: #999;'><span style='font-size: 28px;'>⚪</span><br><small>Start today!</small></div>",
+                unsafe_allow_html=True,
+            )
 
     with col3:
         if is_completed:
@@ -326,11 +435,11 @@ def habit_card(habit, is_completed, streak, on_complete, on_edit, on_delete):
             if st.button("🗑️ Delete", key=f"delete_{habit_id}", help="Delete this habit"):
                 on_delete(habit_id)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 # Page: Today's Habits
 if page == "🏠 Today's Habits":
-    # Use triple quotes to avoid any quote escaping issues
     header_html = """
     <div class="main-header">
         <h1>🌅 Today&#39;s Habits</h1>
@@ -344,7 +453,7 @@ if page == "🏠 Today's Habits":
     data = st.session_state.data
     today = get_today()
 
-    if not data["habits"]:
+    if not data.get("habits"):
         empty_html = """
         <div class="empty-state">
             <h2>🎯 No habits yet!</h2>
@@ -360,7 +469,11 @@ if page == "🏠 Today's Habits":
                 st.rerun()
     else:
         total_habits = len(data["habits"])
-        completed_today = sum(1 for h in data["habits"] if h["id"] in data["check_ins"] and today in data["check_ins"][h["id"]])
+        completed_today = sum(
+            1
+            for h in data["habits"]
+            if h["id"] in data["check_ins"] and today in data["check_ins"][h["id"]]
+        )
         completion_rate = round((completed_today / total_habits) * 100) if total_habits > 0 else 0
 
         col1, col2, col3, col4 = st.columns(4)
@@ -381,7 +494,6 @@ if page == "🏠 Today's Habits":
             st.success("🎉 Amazing! You have completed all your habits today! Remember: Never miss twice!")
 
         st.markdown("---")
-
         col1, col2 = st.columns([3, 1])
         with col1:
             filter_status = st.selectbox("Filter habits:", ["All", "Completed", "Not Completed"], label_visibility="collapsed")
@@ -400,16 +512,19 @@ if page == "🏠 Today's Habits":
                 continue
 
             def on_complete(hid, undo=False):
+                app_data = st.session_state.data
                 if undo:
-                    if hid in data["check_ins"] and today in data["check_ins"][hid]:
-                        data["check_ins"][hid].remove(today)
+                    if hid in app_data["check_ins"] and today in app_data["check_ins"][hid]:
+                        app_data["check_ins"][hid].remove(today)
                 else:
-                    if hid not in data["check_ins"]:
-                        data["check_ins"][hid] = []
-                    if today not in data["check_ins"][hid]:
-                        data["check_ins"][hid].append(today)
+                    if hid not in app_data["check_ins"]:
+                        app_data["check_ins"][hid] = []
+                    if today not in app_data["check_ins"][hid]:
+                        app_data["check_ins"][hid].append(today)
                         st.balloons()
-                save_data(data)
+
+                save_data(app_data)
+                st.session_state.data = normalize_data(app_data)
                 st.rerun()
 
             def on_edit(hid):
@@ -434,6 +549,7 @@ if page == "🏠 Today's Habits":
                     if hid in data["check_ins"]:
                         del data["check_ins"][hid]
                     save_data(data)
+                    st.session_state.data = normalize_data(data)
                     st.session_state.show_delete_confirm = None
                     st.success("Habit deleted!")
                     st.rerun()
@@ -447,17 +563,22 @@ if page == "🏠 Today's Habits":
         show_tip("Take 30 seconds to reflect. This reinforces your identity and helps you spot patterns.", "success")
 
         reflection_key = f"reflection_{today}"
-        current_reflection = data["reflections"].get(today, "")
-        reflection = st.text_area("What went well today? What could be improved?", value=current_reflection, placeholder="I showed up even when I did not feel like it...", key=reflection_key)
+        current_reflection = data.get("reflections", {}).get(today, "")
+        reflection = st.text_area(
+            "What went well today? What could be improved?",
+            value=current_reflection,
+            placeholder="I showed up even when I did not feel like it...",
+            key=reflection_key,
+        )
 
         col1, col2 = st.columns([1, 3])
         with col1:
             if st.button("💾 Save Reflection"):
-                data["reflections"][today] = reflection
-                save_data(data)
+                st.session_state.data["reflections"][today] = reflection
+                save_data(st.session_state.data)
                 st.success("Reflection saved! 🌟")
         with col2:
-            if data["reflections"]:
+            if data.get("reflections"):
                 if st.button("📖 View Past Reflections"):
                     st.session_state.current_page = "📊 Progress Dashboard"
                     st.rerun()
@@ -474,7 +595,10 @@ elif page == "➕ Add New Habit":
         </div>
         """
         st.markdown(edit_header, unsafe_allow_html=True)
-        habit_to_edit = next((h for h in st.session_state.data["habits"] if h["id"] == st.session_state.editing_habit), None)
+        habit_to_edit = next(
+            (h for h in st.session_state.data["habits"] if h["id"] == st.session_state.editing_habit),
+            None,
+        )
     else:
         add_header = """
         <div class="main-header">
@@ -489,35 +613,76 @@ elif page == "➕ Add New Habit":
     with st.form("habit_form", clear_on_submit=not is_editing):
         st.markdown("### 🎯 What is your habit?")
 
-        name = st.text_input("Habit Name *", value=habit_to_edit["name"] if habit_to_edit else "", placeholder="e.g., Exercise, Read, Meditate, Write")
+        name = st.text_input(
+            "Habit Name *",
+            value=habit_to_edit["name"] if habit_to_edit else "",
+            placeholder="e.g., Exercise, Read, Meditate, Write",
+        )
 
         col1, col2 = st.columns(2)
         with col1:
-            two_minute = st.text_input("2-Minute Version * (Make it easy!)", value=habit_to_edit["two_minute_version"] if habit_to_edit else "", placeholder="e.g., Put on running shoes, Read 1 page")
+            two_minute = st.text_input(
+                "2-Minute Version * (Make it easy!)",
+                value=habit_to_edit["two_minute_version"] if habit_to_edit else "",
+                placeholder="e.g., Put on running shoes, Read 1 page",
+            )
         with col2:
-            identity = st.text_input("Identity Statement * (Who you want to become)", value=habit_to_edit["identity"] if habit_to_edit else "", placeholder="e.g., a runner, a reader, a writer")
+            identity = st.text_input(
+                "Identity Statement * (Who you want to become)",
+                value=habit_to_edit["identity"] if habit_to_edit else "",
+                placeholder="e.g., a runner, a reader, a writer",
+            )
 
         st.markdown("### 🔗 Habit Stacking (When & Where)")
         show_tip("Link your new habit to something you already do daily. This creates a clear cue!", "success")
 
-        stack_trigger = st.text_input("After I... (existing daily habit)", value=habit_to_edit["stack_trigger"] if habit_to_edit else "", placeholder="e.g., pour my morning coffee, brush my teeth, sit at my desk")
-        location = st.text_input("I will do this at... (specific location)", value=habit_to_edit.get("location", "") if habit_to_edit else "", placeholder="e.g., in my living room, at the park, in my office")
+        stack_trigger = st.text_input(
+            "After I... (existing daily habit)",
+            value=habit_to_edit["stack_trigger"] if habit_to_edit else "",
+            placeholder="e.g., pour my morning coffee, brush my teeth, sit at my desk",
+        )
+        location = st.text_input(
+            "I will do this at... (specific location)",
+            value=habit_to_edit.get("location", "") if habit_to_edit else "",
+            placeholder="e.g., in my living room, at the park, in my office",
+        )
 
         st.markdown("### 🎁 Temptation Bundling (Make it attractive)")
         show_tip("Pair something you WANT to do with something you NEED to do. Only allow yourself the treat while doing the habit.", "success")
 
-        reward = st.text_input("While doing this habit, I will enjoy...", value=habit_to_edit["reward"] if habit_to_edit else "", placeholder="e.g., listen to my favorite podcast, watch a show, drink special coffee")
+        reward = st.text_input(
+            "While doing this habit, I will enjoy...",
+            value=habit_to_edit["reward"] if habit_to_edit else "",
+            placeholder="e.g., listen to my favorite podcast, watch a show, drink special coffee",
+        )
 
         st.markdown("### ⏰ When?")
-        time_options = ["Morning (6-9am)", "Late Morning (9-12pm)", "Afternoon (12-5pm)", "Evening (5-9pm)", "Anytime", "Specific Time"]
-        time_of_day = st.selectbox("Best time to perform", time_options, index=time_options.index(habit_to_edit["time_of_day"]) if habit_to_edit and habit_to_edit["time_of_day"] in time_options else 0)
+        time_options = [
+            "Morning (6-9am)",
+            "Late Morning (9-12pm)",
+            "Afternoon (12-5pm)",
+            "Evening (5-9pm)",
+            "Anytime",
+            "Specific Time",
+        ]
+        time_of_day = st.selectbox(
+            "Best time to perform",
+            time_options,
+            index=time_options.index(habit_to_edit["time_of_day"]) if habit_to_edit and habit_to_edit["time_of_day"] in time_options else 0,
+        )
 
         st.markdown("### 🔔 Reminder Settings")
         col1, col2 = st.columns(2)
         with col1:
-            reminder_enabled = st.checkbox("Enable daily reminder", value=habit_to_edit.get("reminder_enabled", True) if habit_to_edit else True)
+            reminder_enabled = st.checkbox(
+                "Enable daily reminder",
+                value=habit_to_edit.get("reminder_enabled", True) if habit_to_edit else True,
+            )
         with col2:
-            weekend_skip = st.checkbox("Skip weekends", value=habit_to_edit.get("weekend_skip", False) if habit_to_edit else False)
+            weekend_skip = st.checkbox(
+                "Skip weekends",
+                value=habit_to_edit.get("weekend_skip", False) if habit_to_edit else False,
+            )
 
         submit_label = "💾 Update Habit" if is_editing else "➕ Create Habit"
         submitted = st.form_submit_button(submit_label, use_container_width=True)
@@ -537,6 +702,7 @@ elif page == "➕ Add New Habit":
                     habit_to_edit["updated_at"] = get_today()
                     st.session_state.editing_habit = None
                     save_data(st.session_state.data)
+                    st.session_state.data = normalize_data(st.session_state.data)
                     st.success(f"✅ Habit '{name}' updated successfully!")
                 else:
                     new_habit = {
@@ -551,11 +717,12 @@ elif page == "➕ Add New Habit":
                         "reminder_enabled": reminder_enabled,
                         "weekend_skip": weekend_skip,
                         "created_at": get_today(),
-                        "updated_at": get_today()
+                        "updated_at": get_today(),
                     }
                     st.session_state.data["habits"].append(new_habit)
                     save_data(st.session_state.data)
-                    st.success(f"🎉 Habit '{name}' created! Remember: You do not rise to your goals, you fall to your systems.")
+                    st.session_state.data = normalize_data(st.session_state.data)
+                    st.success("🎉 Habit created! Remember: You do not rise to your goals, you fall to your systems.")
                     st.balloons()
                     st.info("💡 **Next Step:** Go to 'Today's Habits' and complete your first check-in!")
             else:
@@ -580,7 +747,7 @@ elif page == "📊 Progress Dashboard":
 
     data = st.session_state.data
 
-    if not data["habits"]:
+    if not data.get("habits"):
         st.info("👋 No habits to track yet. Create your first habit to see your progress!")
         if st.button("➕ Create First Habit"):
             st.session_state.current_page = "➕ Add New Habit"
@@ -621,6 +788,7 @@ elif page == "📊 Progress Dashboard":
 
                 st.progress(rate_30 / 100, text=f"30-day completion: {rate_30}%")
                 st.info(f"💡 **Identity:** You are {habit['identity']}")
+                st.caption(f"Total completed: {total_done}")
 
                 st.caption("Last 4 weeks:")
                 weekly_data = get_weekly_progress(habit_id, data["check_ins"])
@@ -636,10 +804,10 @@ elif page == "📊 Progress Dashboard":
                 days_cols = st.columns(14)
                 today_dt = datetime.now().date()
                 for i, col in enumerate(days_cols):
-                    check_date = today_dt - timedelta(days=13-i)
-                    check_date_str = check_date.strftime('%Y-%m-%d')
+                    check_date = today_dt - timedelta(days=13 - i)
+                    check_date_str = check_date.strftime("%Y-%m-%d")
                     is_done = habit_id in data["check_ins"] and check_date_str in data["check_ins"][habit_id]
-                    day_abbr = check_date.strftime('%a')[0]
+                    day_abbr = check_date.strftime("%a")[0]
                     if is_done:
                         col.markdown(f"<div class='calendar-day completed'>{day_abbr}</div>", unsafe_allow_html=True)
                     elif check_date < today_dt:
@@ -662,10 +830,14 @@ elif page == "📊 Progress Dashboard":
         st.markdown("---")
         st.subheader("📈 Compound Growth Calculator")
 
-        if data["habits"]:
-            earliest_date = min(datetime.strptime(h["created_at"], '%Y-%m-%d') for h in data["habits"])
+        if data.get("habits"):
+            created_dates = [
+                datetime.strptime(h.get("created_at", get_today()), "%Y-%m-%d")
+                for h in data["habits"]
+            ]
+            earliest_date = min(created_dates)
             days_active = (datetime.now() - earliest_date).days + 1
-            improvement = (1.01 ** days_active)
+            improvement = 1.01 ** days_active
 
             quote_html = f"""
             <div class="quote-box">
@@ -677,16 +849,18 @@ elif page == "📊 Progress Dashboard":
             """
             st.markdown(quote_html, unsafe_allow_html=True)
 
-        if data["reflections"]:
+        reflections = data.get("reflections", {})
+        if reflections:
             st.markdown("---")
             st.subheader("📖 Past Reflections")
-            sorted_reflections = sorted(data["reflections"].items(), key=lambda x: x[0], reverse=True)
+            sorted_reflections = sorted(reflections.items(), key=lambda x: x[0], reverse=True)
             for date, reflection in sorted_reflections[:10]:
                 with st.expander(f"📝 {date}"):
                     st.write(reflection)
                     if st.button("🗑️ Delete", key=f"del_ref_{date}"):
-                        del data["reflections"][date]
-                        save_data(data)
+                        del st.session_state.data["reflections"][date]
+                        save_data(st.session_state.data)
+                        st.session_state.data = normalize_data(st.session_state.data)
                         st.rerun()
 
 # Page: Manage Habits
@@ -702,18 +876,18 @@ elif page == "⚙️ Manage Habits":
 
     data = st.session_state.data
 
-    if not data["habits"]:
+    if not data.get("habits"):
         st.info("No habits to manage yet.")
     else:
         st.subheader(f"You have {len(data['habits'])} habits")
 
         for i, habit in enumerate(data["habits"]):
             with st.container():
-                st.markdown(f'<div class="habit-card">', unsafe_allow_html=True)
+                st.markdown('<div class="habit-card">', unsafe_allow_html=True)
                 col1, col2, col3 = st.columns([3, 2, 2])
 
                 with col1:
-                    st.markdown(f"**{i+1}. {habit['name']}**")
+                    st.markdown(f"**{i + 1}. {habit['name']}**")
                     st.caption(f"Created: {habit['created_at']}")
                     st.markdown(f"<span class='identity-badge'>{habit['identity']}</span>", unsafe_allow_html=True)
 
@@ -724,25 +898,47 @@ elif page == "⚙️ Manage Habits":
                     st.caption(f"Total completed: {total_done}")
 
                 with col3:
-                    if i > 0:
-                        if st.button("⬆️ Up", key=f"up_{habit['id']}"):
-                            data["habits"][i], data["habits"][i-1] = data["habits"][i-1], data["habits"][i]
-                            save_data(data)
-                            st.rerun()
-                    if i < len(data["habits"]) - 1:
-                        if st.button("⬇️ Down", key=f"down_{habit['id']}"):
-                            data["habits"][i], data["habits"][i+1] = data["habits"][i+1], data["habits"][i]
-                            save_data(data)
-                            st.rerun()
+                    if i > 0 and st.button("⬆️ Up", key=f"up_{habit['id']}"):
+                        data["habits"][i], data["habits"][i - 1] = data["habits"][i - 1], data["habits"][i]
+                        save_data(data)
+                        st.session_state.data = normalize_data(data)
+                        st.rerun()
+
+                    if i < len(data["habits"]) - 1 and st.button("⬇️ Down", key=f"down_{habit['id']}"):
+                        data["habits"][i], data["habits"][i + 1] = data["habits"][i + 1], data["habits"][i]
+                        save_data(data)
+                        st.session_state.data = normalize_data(data)
+                        st.rerun()
+
                     if st.button("✏️ Edit", key=f"manage_edit_{habit['id']}"):
                         st.session_state.editing_habit = habit["id"]
                         st.session_state.current_page = "➕ Add New Habit"
                         st.rerun()
+
                     if st.button("🗑️ Delete", key=f"manage_delete_{habit['id']}"):
                         st.session_state.show_delete_confirm = habit["id"]
                         st.rerun()
 
-                st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+        if st.session_state.show_delete_confirm:
+            hid = st.session_state.show_delete_confirm
+            habit_name = next((h["name"] for h in data["habits"] if h["id"] == hid), "this habit")
+            st.warning(f"⚠️ Are you sure you want to delete '{habit_name}'?")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✅ Confirm Delete", key="manage_confirm_delete"):
+                    data["habits"] = [h for h in data["habits"] if h["id"] != hid]
+                    data["check_ins"].pop(hid, None)
+                    save_data(data)
+                    st.session_state.data = normalize_data(data)
+                    st.session_state.show_delete_confirm = None
+                    st.success("Habit deleted!")
+                    st.rerun()
+            with c2:
+                if st.button("❌ Cancel", key="manage_cancel_delete"):
+                    st.session_state.show_delete_confirm = None
+                    st.rerun()
 
         st.markdown("---")
         st.subheader("⚡ Bulk Actions")
@@ -756,10 +952,16 @@ elif page == "⚙️ Manage Habits":
                     save_data(st.session_state.data)
                     st.success("All data cleared!")
                     st.rerun()
+
         with col2:
-            if st.button("📥 Export Data", use_container_width=True):
-                json_str = json.dumps(data, indent=2)
-                st.download_button(label="Download JSON", data=json_str, file_name="atomic_habits_backup.json", mime="application/json")
+            json_str = json.dumps(data, indent=2)
+            st.download_button(
+                label="📥 Export Data",
+                data=json_str,
+                file_name="atomic_habits_backup.json",
+                mime="application/json",
+                use_container_width=True,
+            )
 
 # Page: Learn & Tips
 elif page == "📚 Learn & Tips":
@@ -771,8 +973,13 @@ elif page == "📚 Learn & Tips":
     """
     st.markdown(learn_header, unsafe_allow_html=True)
 
-    show_tips_setting = st.checkbox("Show beginner tips throughout the app", value=st.session_state.show_tips)
+    show_tips_setting = st.checkbox(
+        "Show beginner tips throughout the app",
+        value=st.session_state.data.get("user_settings", {}).get("show_tips", True),
+    )
     st.session_state.show_tips = show_tips_setting
+    st.session_state.data["user_settings"]["show_tips"] = show_tips_setting
+    save_data(st.session_state.data)
 
     st.markdown("---")
     st.subheader("⚖️ The Four Laws of Behavior Change")
@@ -781,7 +988,7 @@ elif page == "📚 Learn & Tips":
         ("🎯 1. Make It Obvious", ["Design your environment", "Use habit stacking", "Implementation intentions"], ["Hide cues of bad habits"]),
         ("😍 2. Make It Attractive", ["Temptation bundling", "Join supportive cultures", "Create motivation rituals"], ["Reframe bad habits as unattractive"]),
         ("✅ 3. Make It Easy", ["The 2-Minute Rule", "Reduce friction", "Prime your environment"], ["Increase friction for bad habits"]),
-        ("🎉 4. Make It Satisfying", ["Immediate rewards", "Habit tracking", "Never miss twice"], ["Make bad habits unsatisfying"])
+        ("🎉 4. Make It Satisfying", ["Immediate rewards", "Habit tracking", "Never miss twice"], ["Make bad habits unsatisfying"]),
     ]
 
     for law in laws:
@@ -804,7 +1011,7 @@ elif page == "📚 Learn & Tips":
         ("🎁 Temptation Bundling", "Pair an action you want to do with an action you need to do."),
         ("📊 Never Miss Twice", "Missing once is a mistake. Missing twice is the start of a new habit. Get back on track immediately."),
         ("🏛️ Environment Design", "You do not have to be the victim of your environment. You can also be the architect of it."),
-        ("🔄 Systems vs Goals", "You do not rise to the level of your goals. You fall to the level of your systems.")
+        ("🔄 Systems vs Goals", "You do not rise to the level of your goals. You fall to the level of your systems."),
     ]
 
     for title, desc in principles:
@@ -820,7 +1027,7 @@ elif page == "📚 Learn & Tips":
         "You do not rise to the level of your goals. You fall to the level of your systems.",
         "Every action you take is a vote for the type of person you wish to become.",
         "Habits are the compound interest of self-improvement.",
-        "Time magnifies the margin between success and failure. It will multiply whatever you feed it."
+        "Time magnifies the margin between success and failure. It will multiply whatever you feed it.",
     ]
 
     for quote in quotes:
@@ -837,14 +1044,19 @@ elif page == "👤 My Profile":
     st.markdown(profile_header, unsafe_allow_html=True)
 
     data = st.session_state.data
+    user_settings = data.get("user_settings", {})
 
     with st.form("profile_form"):
         st.subheader("📝 Your Information")
-        name = st.text_input("Your Name", value=data["user_settings"].get("name", ""), placeholder="What should we call you?")
+        name = st.text_input(
+            "Your Name",
+            value=user_settings.get("name", ""),
+            placeholder="What should we call you?",
+        )
 
         st.markdown("---")
         st.subheader("🎯 Your Identity Statements")
-        if data["habits"]:
+        if data.get("habits"):
             st.markdown("**Current identities you are building:**")
             for habit in data["habits"]:
                 st.markdown(f"- I am {habit['identity']} (via {habit['name']})")
@@ -853,27 +1065,39 @@ elif page == "👤 My Profile":
 
         st.markdown("---")
         st.subheader("⚙️ App Settings")
-        show_tips = st.checkbox("Show beginner tips", value=data["user_settings"].get("show_tips", True))
+        show_tips = st.checkbox(
+            "Show beginner tips",
+            value=user_settings.get("show_tips", True),
+        )
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.form_submit_button("💾 Save Profile", use_container_width=True):
-                data["user_settings"]["name"] = name
-                data["user_settings"]["show_tips"] = show_tips
-                save_data(data)
-                st.success("Profile saved!")
+            save_profile = st.form_submit_button("💾 Save Profile", use_container_width=True)
         with col2:
-            if st.form_submit_button("🔄 Reset All Data", use_container_width=True):
-                st.warning("⚠️ This will delete ALL your habits and progress!")
-                st.session_state.data = get_default_data()
-                save_data(st.session_state.data)
-                st.success("All data reset!")
-                st.rerun()
+            reset_all = st.form_submit_button("🔄 Reset All Data", use_container_width=True)
+
+        if save_profile:
+            st.session_state.data["user_settings"]["name"] = name
+            st.session_state.data["user_settings"]["show_tips"] = show_tips
+            st.session_state.show_tips = show_tips
+            save_data(st.session_state.data)
+            st.success("Profile saved!")
+
+        if reset_all:
+            st.session_state.data = get_default_data()
+            save_data(st.session_state.data)
+            st.success("All data reset!")
+            st.rerun()
 
     st.markdown("---")
     st.subheader("📊 Your Journey Summary")
-    if data["habits"]:
-        start_date = datetime.strptime(data["user_settings"]["started_date"], '%Y-%m-%d')
+    if data.get("habits"):
+        started_str = user_settings.get("started_date", get_today())
+        try:
+            start_date = datetime.strptime(started_str, "%Y-%m-%d")
+        except ValueError:
+            start_date = datetime.now()
+
         days_journey = (datetime.now() - start_date).days + 1
         total_checkins = sum(len(dates) for dates in data["check_ins"].values())
 
@@ -898,3 +1122,7 @@ st.sidebar.caption("Based on Atomic Habits by James Clear")
 if st.sidebar.button("❓ Need Help?"):
     st.session_state.current_page = "📚 Learn & Tips"
     st.rerun()
+'''
+path = Path('/mnt/data/app_fixed.py')
+path.write_text(updated_code, encoding='utf-8')
+print(f"Wrote {path}")
